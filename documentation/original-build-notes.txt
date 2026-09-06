@@ -1,0 +1,626 @@
+Small Doctor Office
+
+
+Topology:
+- Core Router(ROAS) 
+- Core Switch
+- SW A
+- SW B
+- SW C
+- PC Recept 1
+- PC Recept 2
+- PC Admin
+- PC Doc Pediatrician 
+- PC Doc Family
+- Phone Recept Ph 1
+- Phone Recept Ph 2
+- Printer Office Printer
+- Ped Ph
+- Fam Ph
+- AP-PT Wifi 
+- Server PT Clinic Server
+
+Connections
+- ROAS <-> Core SW
+- AP-PT <-> Core SW
+- Server PT <-> Core SW
+- SW A <-> Core SW
+- SW B <-> Core SW
+- SW C <-> Core SW
+- Recept Ph 1 <-> SW A
+- Recept Ph 2 <-> SW A
+- Office Printer <-> SW A
+- Recept PC 1 <-> Recept Ph 1
+- Recept PC 2 <-> Recept Ph 2
+- Guest Phone <-> AP-PT
+- Admin PC <-> SW B
+- Ped Ph <-> SW C
+- Doc Ped PC <-> Ped Ph
+- Fam Ph <-> SW C
+- Doc Fam PC <-> Fam Ph
+
+VLAN and Subnet Master Plan
+  VLAN       VLAN NAME        SUBNET           DEFAULT GATWAY  CONNECTED/TARGET DEVICES
+- VLAN 10 | RECEPTION DATA | 192.168.10.0/24 | 192.168.10.1 | PC RECPT 1, PC RECPT 2
+- VLAN 20 | ADMIN DATA | 192.168.20.0/24 | 192.168.20.1 | PC ADMIN
+- VLAN 25 | DOCTORS DATA | 192.168.25.0/24 | 192.168.25.1 | PC DOC PED, PC DOC FAM
+- VLAN 30 | VOICE | 192.168.30.0/24 | 192.168.30.1 | RECPT PH 1, RECEPT PH 2, PED PH, FAM PH
+- VLAN 40 | PRINTERS | 192.168.40.0/24 | 192.168.40.1 | PRINTER OFFICE
+- VLAN 50 | SERVICES | 192.168.50.0/24 | 192.168.50.1 | SERVER PT CLINIC SERVER
+- VLAN 60 | GUEST WIFI | 192.168.60.0/24 | 192.168.60.1 | AP-PT WIFI SMARTPHONE-PT
+
+Note Why every switch needs the vlans configed
+- Every switch needs to know the vlans that are in the network, if for whatever reason traffic passes through them they need to have that vlan 802.1q tag in their data base if not they wont pass the traffic along they would just drop the frame. They do not route traffic they act as bridges. 
+
+Note:
+-  After giving every switch the vlans in the network we must now make every port that connects to the core switch a trunk port thats connected to the core switch
+- Also enabling the core switch port that connected to all switches and to the router as a trunk port. So every switch port interconnecting to the switches must be configured as a Trunk Port
+Note: Ports connected directly to end devices (PCs, Server,AP,Printers) remain an access port
+
+Next we created the ROAS and split the port connecting the router and switch into their respected vlans
+enable
+config t
+interface g0/0/0
+no shutdown
+(This is to change the port to up, bringing up the physical link between the router and Core SW)
+interface g0/0/0.10
+(g0/0/0.10 now we created virtual subinterface 10 on the trunk port and to configuring it for vlan 10 traffic)
+encapsulation dot1q 10
+(Any frame that needs to be in vlan 10 will be given their 802.1q tag as vlan 10, so tells the router to tag outgoing frames with 802.1q vlan id 10 and accept incoming frames with vlan id 10)
+ip address 192.168.10.1 255.255.255.0
+(This tells where the vlan is going to be in the network so we know 192.168.10.x will be in vlan 10 it acts as the default gateway for devices in the subnet)
+And so on for every vlan
+
+Next Assign Access + Voice VLAN Ports
+SW A
+interface range fa0/4 - 5
+switchport mode access
+switchport access vlan 10
+switchport voice vlan 30
+
+SW B
+interface fa0/1
+switchport mode access
+switchport access vlan 20
+
+SW C
+interface range fa0/4 - 5
+switchport mode access
+switchport access vlan 25
+switchport voice vlan 30
+
+When doing a basic connectivity test, pinging the default gateway, the frames kept getting dropped.
+
+First check: Trunk mode active in both the Core Switch and in Switch A
+
+Show interface trunk
+Switch A:
+Port        Mode         Encapsulation  Status        Native vlan
+Fa0/3       on           802.1q         trunking      1
+
+Port        Vlans allowed on trunk
+Fa0/3       1-1005
+
+Port        Vlans allowed and active in management domain
+Fa0/3       1,10,20,25,30,40,50,60
+
+Port        Vlans in spanning tree forwarding state and not pruned
+Fa0/3       1,10,20,25,30,40,50,60
+
+Looks to be good
+
+Core Switch:
+
+Port        Mode         Encapsulation  Status        Native vlan
+Fa0/1       on           802.1q         trunking      1
+Fa0/2       on           802.1q         trunking      1
+Fa0/3       on           802.1q         trunking      1
+Fa0/4       on           802.1q         trunking      1
+
+Port        Vlans allowed on trunk
+Fa0/1       1-1005
+Fa0/2       1-1005
+Fa0/3       1-1005
+Fa0/4       1-1005
+
+Port        Vlans allowed and active in management domain
+Fa0/1       1,10,20,25,30,40,50,60
+Fa0/2       1,10,20,25,30,40,50,60
+Fa0/3       1,10,20,25,30,40,50,60
+Fa0/4       1,10,20,25,30,40,50,60
+
+Port        Vlans in spanning tree forwarding state and not pruned
+Fa0/1       1,10,20,25,30,40,50,60
+Fa0/2       1,10,20,25,30,40,50,60
+Fa0/3       1,10,20,25,30,40,50,60
+Fa0/4       1,10,20,25,30,40,50,60
+
+Looks to be okay as well. 
+
+Next test: Verify PC to Switch Port Mapping
+We run 
+ipconfig /all 
+on the pc to view its mac address then we run 
+show mac address-table
+on switch A
+
+Here was the error:
+
+          Mac Address Table
+-------------------------------------------
+
+Vlan    Mac Address       Type        Ports
+----    -----------       --------    -----
+
+   1    00e0.b086.9e01    DYNAMIC     Fa0/3
+  10    00e0.b086.9e01    DYNAMIC     Fa0/3
+  20    00e0.b086.9e01    DYNAMIC     Fa0/3
+  25    00e0.b086.9e01    DYNAMIC     Fa0/3
+  30    0001.6355.e3cb    DYNAMIC     Fa0/3
+  30    0002.164b.61ac    DYNAMIC     Fa0/3
+  30    0030.f234.70e3    DYNAMIC     Fa0/5
+  30    0050.0fd9.7c51    DYNAMIC     Fa0/4
+  30    00e0.b086.9e01    DYNAMIC     Fa0/3
+  40    00e0.b086.9e01    DYNAMIC     Fa0/3
+  50    00e0.b086.9e01    DYNAMIC     Fa0/3
+  60    00e0.b086.9e01    DYNAMIC     Fa0/3
+
+
+   Physical Address................: 0001.C752.1849
+The mac address of PC Recpt 1 isn't on here at all 
+Plus only Voice VLAN 30 is active so ports Fa0/4 and Fa0/5 are learning mac addresses for VLAN 30(Voice) but zero traffic is being detected on VLAN 10 (Data)
+
+Fixed that error so now:
+Switch A
+
+          Mac Address Table
+-------------------------------------------
+
+Vlan    Mac Address       Type        Ports
+----    -----------       --------    -----
+
+   1    00e0.b086.9e01    DYNAMIC     Fa0/3
+ * 10    0001.c752.1849    DYNAMIC     Fa0/4
+  10    00e0.b086.9e01    DYNAMIC     Fa0/3
+  20    00e0.b086.9e01    DYNAMIC     Fa0/3
+  25    00e0.b086.9e01    DYNAMIC     Fa0/3
+  30    0001.6355.e3cb    DYNAMIC     Fa0/3
+  30    0002.164b.61ac    DYNAMIC     Fa0/3
+  30    0030.f234.70e3    DYNAMIC     Fa0/5
+  30    0050.0fd9.7c51    DYNAMIC     Fa0/4
+  30    00e0.b086.9e01    DYNAMIC     Fa0/3
+  40    00e0.b086.9e01    DYNAMIC     Fa0/3
+  50    00e0.b086.9e01    DYNAMIC     Fa0/3
+  60    00e0.b086.9e01    DYNAMIC     Fa0/3
+
+Found another error:
+So the port that connected the Core Switch and the ROAS was not in trunk mode so the frames were being dropped:
+
+Before:
+
+Switch#show interface trunk
+Port        Mode         Encapsulation  Status        Native vlan
+Fa0/1       on           802.1q         trunking      1
+Fa0/2       on           802.1q         trunking      1
+Fa0/3       on           802.1q         trunking      1
+Fa0/4       on           802.1q         trunking      1
+
+Port        Vlans allowed on trunk
+Fa0/1       1-1005
+Fa0/2       1-1005
+Fa0/3       1-1005
+Fa0/4       1-1005
+
+Port        Vlans allowed and active in management domain
+Fa0/1       1,10,20,25,30,40,50,60
+Fa0/2       1,10,20,25,30,40,50,60
+Fa0/3       1,10,20,25,30,40,50,60
+Fa0/4       1,10,20,25,30,40,50,60
+
+Port        Vlans in spanning tree forwarding state and not pruned
+Fa0/1       1,10,20,25,30,40,50,60
+Fa0/2       1,10,20,25,30,40,50,60
+Fa0/3       1,10,20,25,30,40,50,60
+Fa0/4       1,10,20,25,30,40,50,60
+
+Now:
+
+Switch#show interface trunk
+Port        Mode         Encapsulation  Status        Native vlan
+Fa0/1       on           802.1q         trunking      1
+Fa0/2       on           802.1q         trunking      1
+Fa0/3       on           802.1q         trunking      1
+Fa0/4       on           802.1q         trunking      1
+Gig0/1      on           802.1q         trunking      1
+
+Port        Vlans allowed on trunk
+Fa0/1       1-1005
+Fa0/2       1-1005
+Fa0/3       1-1005
+Fa0/4       1-1005
+Gig0/1      1-1005
+
+Port        Vlans allowed and active in management domain
+Fa0/1       1,10,20,25,30,40,50,60
+Fa0/2       1,10,20,25,30,40,50,60
+Fa0/3       1,10,20,25,30,40,50,60
+Fa0/4       1,10,20,25,30,40,50,60
+Gig0/1      1,10,20,25,30,40,50,60
+
+After fixing those errors we see that that traffic is being successfully passed along
+
+C:\>ping 192.168.10.1
+
+Pinging 192.168.10.1 with 32 bytes of data:
+
+Reply from 192.168.10.1: bytes=32 time=10ms TTL=255
+Reply from 192.168.10.1: bytes=32 time=1ms TTL=255
+Reply from 192.168.10.1: bytes=32 time<1ms TTL=255
+Reply from 192.168.10.1: bytes=32 time<1ms TTL=255
+
+Ping statistics for 192.168.10.1:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 0ms, Maximum = 10ms, Average = 2ms
+
+C:\>ping 192.168.20.1
+
+Pinging 192.168.20.1 with 32 bytes of data:
+
+Reply from 192.168.20.1: bytes=32 time<1ms TTL=255
+Reply from 192.168.20.1: bytes=32 time<1ms TTL=255
+Reply from 192.168.20.1: bytes=32 time<1ms TTL=255
+Reply from 192.168.20.1: bytes=32 time=15ms TTL=255
+
+Ping statistics for 192.168.20.1:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 0ms, Maximum = 15ms, Average = 3ms
+
+C:\>ping 192.168.20.10
+
+Pinging 192.168.20.10 with 32 bytes of data:
+
+Request timed out.
+Reply from 192.168.20.10: bytes=32 time<1ms TTL=127
+Reply from 192.168.20.10: bytes=32 time=1ms TTL=127
+Reply from 192.168.20.10: bytes=32 time=1ms TTL=127
+
+Ping statistics for 192.168.20.10:
+    Packets: Sent = 4, Received = 3, Lost = 1 (25% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 0ms, Maximum = 1ms, Average = 0ms
+
+What has been done thus far:
+All VLANs have been created on switch A, B, C
+Core Switch has also VLANs 
+ROAS port g0/0/0 has their virtual interfaces configured to be g0/0/0.10, .20, .25, .30, .40, .50, .60. 
+Port g0/0/0 on ROAS and port g0/1 has been switchport mode to trunk 
+Daisy chain for ex. PC recpt 1 with recpt phone 1 etc
+Trunk ports for core switch and the access switches have been configured.
+
+
+
+Reception and Admin is half way done. 
+Next step is to configure the doctors end devices assign ip addresses to doctor network 25 (vlan 25) 
+Connect printers, Access point, server pt, and see about guest phone
+Look into DHCP for wireless access point. 
+
+Next:
+- Applied access to vlan 25 and voice 30 to doctors department
+SW C
+...
+interface range fa0/4 - 5
+switchport mode access
+switchport access vlan 25
+switchport voice vlan 30
+end
+
+- Gave the doctors devices their appropriate ip, subnet, and default gateway
+
+- We start to configure the printers from (SW A) 
+interface fa0/6 (where the printer is connected)
+switchport mode access
+switchport access vlan 40
+end
+
+- We also gave the printer their own IP, subnet mask, and default gateway
+ 
+- Configured the server now (for DHCP, DNS, and TFTP)
+configure fa0/4
+switchport mode access
+switchport access vlan 60
+end
+
+- Then set up the wireless access point
+SSID --> Guest WiFi
+Set WPA2-PSK security 
+
+- The same but for the smartphone
+SSID --> Guest WiFi
+(for now) Assigned static ip, mask, and gateway
+
+- Now we set up the DHCP on the router
+(Set up)
+ip dhcp pool RECEPTION_POOL
+ network 192.168.10.0 255.255.255.0
+ default-router 192.168.10.1
+ default-router 192.168.10.1
+!
+ip dhcp pool GUEST_WIFI_POOL
+ network 192.168.60.0 255.255.255.0
+ default-router 192.168.60.1
+
+- We must exclude the static gateway and server ips so that the router doenst hand those out to devices and have a ip conflict
+
+enable
+configure terminal
+! Exclude Default Gateways (.1) and Static Ranges (.1 - .10)
+ip dhcp excluded-address 192.168.10.1 192.168.10.10
+ip dhcp excluded-address 192.168.20.1 192.168.20.10
+ip dhcp excluded-address 192.168.25.1 192.168.25.10
+ip dhcp excluded-address 192.168.30.1 192.168.30.10
+ip dhcp excluded-address 192.168.40.1 192.168.40.10
+ip dhcp excluded-address 192.168.50.1 192.168.50.10
+ip dhcp excluded-address 192.168.60.1 192.168.60.10
+
+- Once we know that the DHCP protocol wont hand out those ips out we can start creating the pool of ips to hand out
+
+! VLAN 10 - Reception Data
+ip dhcp pool RECEPTION_POOL
+ network 192.168.10.0 255.255.255.0
+ default-router 192.168.10.1
+!
+! VLAN 20 - Admin Data
+ip dhcp pool ADMIN_POOL
+ network 192.168.20.0 255.255.255.0
+ default-router 192.168.20.1
+!
+! VLAN 25 - Doctors Data
+ip dhcp pool DOCTORS_POOL
+ network 192.168.25.0 255.255.255.0
+ default-router 192.168.25.1
+!
+! VLAN 30 - Voice (IP Phones)
+ip dhcp pool VOICE_POOL
+ network 192.168.30.0 255.255.255.0
+ default-router 192.168.30.1
+ option 150 ip 192.168.30.1
+!
+! VLAN 60 - Guest WiFi
+ip dhcp pool GUEST_WIFI_POOL
+ network 192.168.60.0 255.255.255.0
+ default-router 192.168.60.1
+end
+
+(option 150, it tells the cisco IP Phones where to find the TFTP server (in this case the router itself) to download firmware and extension config files
+
+- Once that is up we do a test to see if instead of manually assigning a static ip we can use the DHCP to give them out
+
+PC Recept 1 --> Desktop --> IP config --> toggle from 'static' to 'dhcp'
+It should then say success and assign an ip for it now and gateway
+We then do the same for the smartphone
+
+-To test we do 'show ip dhcp binding' 
+
+ROAS#show ip dhcp binding
+IP address       Client-ID/              Lease expiration        Type
+                 Hardware address
+192.168.10.11    0001.C752.1849           --                     Automatic
+192.168.30.13    0030.F234.70E3           --                     Automatic
+192.168.30.11    0002.164B.61AC           --                     Automatic
+192.168.30.12    0001.6355.E3CB           --                     Automatic
+192.168.30.14    0050.0FD9.7C51           --                     Automatic
+192.168.60.11    0010.11C3.D283           --                     Automatic
+(We should turn it on for all of them for now its only a set few for testing)
+
+- Next we did telephony service (for the cisco ip phones)
+Here is a great troubleshooting problem. At the beginning we were using an ISR 4331 but that specific router in packet tracer doesn't support telephony.
+
+ROAS#telephony-service?
+% Unrecognized command
+ROAS#config t
+Enter configuration commands, one per line.  End with CNTL/Z.
+ROAS(config)#telephony-service ?
+% Unrecognized command
+ROAS(config)#call-manager-fallback
+              ^
+% Invalid input detected at '^' marker.
+ROAS(config)# 
+
+Since non of these worked not even to see the options 'telephony-service ?' we know that this specific router doenst support it. 
+
+So we swapped the ISR 4331 for a Cisco 2811. 
+- First we must see all of the configs and save them somewhere
+
+ROAS# show running-config
+(this will show all of the configs we added)
+Then we swapped them out so now we are using a 2811 router
+We then just inter the new router config terminal and paste all of the running configs that we saved.
+
+However since this new router doesn't have a GigabitEthernet we have to configure the FastEthernet instead. 
+
+interface FastEthernet0/0
+ no shutdown
+!
+interface FastEthernet0/0.10
+ encapsulation dot1Q 10
+ ip address 192.168.10.1 255.255.255.0
+!
+interface FastEthernet0/0.20
+ encapsulation dot1Q 20
+ ip address 192.168.20.1 255.255.255.0
+!
+interface FastEthernet0/0.25
+ encapsulation dot1Q 25
+ ip address 192.168.25.1 255.255.255.0
+!
+interface FastEthernet0/0.30
+ encapsulation dot1Q 30
+ ip address 192.168.30.1 255.255.255.0
+!
+interface FastEthernet0/0.40
+ encapsulation dot1Q 40
+ ip address 192.168.40.1 255.255.255.0
+!
+interface FastEthernet0/0.50
+ encapsulation dot1Q 50
+ ip address 192.168.50.1 255.255.255.0
+!
+interface FastEthernet0/0.60
+ encapsulation dot1Q 60
+ ip address 192.168.60.1 255.255.255.0
+end
+
+After everything is up and looks okay we now configure the telephones
+
+configure terminal
+telephony-service
+ max-ephones 5
+ max-dn 5
+ ip source-address 192.168.30.1 port 2000
+ auto assign 1 to 5
+!
+ephone-dn 1
+ number 1001
+!
+ephone-dn 2
+ number 1002
+!
+ephone-dn 3
+ number 1003
+!
+ephone-dn 4
+ number 1004
+end
+
+Each phone should have their own number (1001, 1003 etc)
+
+We then save our configs to the NVRAM so that those configs could run at start up
+
+copy running-config startup-config
+
+We tested to see if each phone has their numbers now and are up and running, and we try calling another ip phone to see if everything is set up okay and is running.
+
+We ran into an error where the phone was stuck on "Configuring CM List" so we must verify Option 150 on the ROAS
+
+enable
+configure terminal
+ip dhcp pool VOICE_POOL
+ option 150 ip 192.168.30.1
+end
+
+Then we verify telephony service source address
+
+configure terminal
+telephony-service
+ ip source-address 192.168.30.1 port 2000
+ create cnf-files
+end
+
+Once everything is tested and looks good we copy the running config to startup config on all access switches
+
+Once that is done we must implement ACL on the guest wifi to isolate it so it cant reach the other subnet (due to security if a random person gains access to our wifi and they can access the other subnets they could steal valuable information)
+
+
+configure terminal
+!
+ip access-list extended BLOCK_GUEST_INTERNAL
+ deny ip 192.168.60.0 0.0.0.255 192.168.10.0 0.0.0.255
+ deny ip 192.168.60.0 0.0.0.255 192.168.20.0 0.0.0.255
+ deny ip 192.168.60.0 0.0.0.255 192.168.25.0 0.0.0.255
+ deny ip 192.168.60.0 0.0.0.255 192.168.30.0 0.0.0.255
+ deny ip 192.168.60.0 0.0.0.255 192.168.50.0 0.0.0.255
+ permit ip any any
+!
+interface FastEthernet0/0.60
+ ip access-group BLOCK_GUEST_INTERNAL in
+end
+write memory
+
+We do a test to see everything is up. But we also try pinging the guest phone which should time out always because of the ACL blocking it. 
+
+Some of the final steps are to configure the clinic server and printer static ips
+
+So for the server we go into the ip config and assign it a static IP (vlan 50)
+
+Same thing for printer (vlan 40)
+
+Once that is done we go into verification to make sure everything is up and running as it is suppose to. 
+
+So we verify guest wifi isolation (ACL testing)
+
+Output:
+Request timed out.
+Reply from 192.168.60.1: Destination host unreachable.
+Reply from 192.168.60.1: Destination host unreachable.
+Reply from 192.168.60.1: Destination host unreachable.
+
+Ping statistics for 192.168.50.10:
+    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
+
+Note the 'Destination host unreachable' means the ACL is doing its job
+
+Next we ping its default gateway which should be reachable 
+
+Output:
+
+Pinging 192.168.60.1 with 32 bytes of data:
+
+Reply from 192.168.60.1: bytes=32 time=13ms TTL=255
+Reply from 192.168.60.1: bytes=32 time=12ms TTL=255
+Reply from 192.168.60.1: bytes=32 time=10ms TTL=255
+Reply from 192.168.60.1: bytes=32 time=8ms TTL=255
+
+Ping statistics for 192.168.60.1:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 8ms, Maximum = 13ms, Average = 10ms
+
+C:\>
+
+We once again save the config on all switches
+copy running-config startup-config
+
+We test end-to-end verification. We ping from PC Recpt 1 to Clinic Server
+
+Output:
+
+Pinging 192.168.50.10 with 32 bytes of data:
+
+Request timed out.
+Reply from 192.168.50.10: bytes=32 time<1ms TTL=127
+Reply from 192.168.50.10: bytes=32 time<1ms TTL=127
+Reply from 192.168.50.10: bytes=32 time<1ms TTL=127
+
+Ping statistics for 192.168.50.10:
+    Packets: Sent = 4, Received = 3, Lost = 1 (25% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+C:\>
+
+Next we do a test call between extension 1001 and 1004
+
+Success
+
+From here the network is fully up and running. Only thing left is to polish and add some more security to make sure everything is at 100%. After that (even now) its a fully verified network architecture. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
