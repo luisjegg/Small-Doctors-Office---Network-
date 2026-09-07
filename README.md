@@ -78,6 +78,7 @@ A small doctor's office needs a segmented network for reception staff, administr
 - [TCK-001 — Inter-VLAN reachability](troubleshooting-tickets/TCK-001-inter-vlan-reachability.pdf)
 - [TCK-002 — Doctors' office outage](troubleshooting-tickets/TCK-002-doctors-office-outage.pdf)
 - [TCK-003 — Printer inaccessible](troubleshooting-tickets/TCK-003-printer-inaccessible.pdf)
+- [TCK-004 — New troubleshooting ticket](troubleshooting-tickets/TCK-004.pdf)
 
 These tickets represent an in-progress troubleshooting lab. Some documentation and lab details may be refined as the work continues.
 
