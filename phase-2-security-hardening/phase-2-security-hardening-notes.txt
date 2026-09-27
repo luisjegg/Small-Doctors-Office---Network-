@@ -1,0 +1,285 @@
+Phase 2: Security Hardening 
+— Small Doctor Office Network
+In this phase of the project, I added security controls to the Small Doctor Office network that was already built with VLAN segmentation, Router-on-a-Stick, DHCP, IP phones, printer access, a clinic server, and guest Wi-Fi. The goal was to take the network from “working” to more secure by protecting the clinic server, limiting unnecessary communication between VLANs, hardening switch access ports, securing management access, and adding basic monitoring/logging.
+
+The main security goals were to protect the clinic server, isolate voice traffic, restrict printer behavior, prevent unauthorized physical access to switchports, secure unused ports, harden trunk links, replace Telnet with SSH, and prepare the network for centralized logging and monitoring.
+
+The VLANs used in this network are:
+VLAN 10 — Reception_Data — 192.168.10.0/24 — Gateway 192.168.10.1
+VLAN 20 — Admin_Data — 192.168.20.0/24 — Gateway 192.168.20.1
+VLAN 25 — Doctors_Data — 192.168.25.0/24 — Gateway 192.168.25.1
+VLAN 30 — Voice — 192.168.30.0/24 — Gateway 192.168.30.1
+VLAN 40 — Printers — 192.168.40.0/24 — Gateway 192.168.40.1
+VLAN 50 — Services — 192.168.50.0/24 — Gateway 192.168.50.1
+VLAN 60 — Guest_WiFi — 192.168.60.0/24 — Gateway 192.168.60.1
+VLAN 888 — NATIVE_TRUNK — dedicated native VLAN for trunk links
+VLAN 999 — UNUSED_PORTS — blackhole VLAN for unused switchports
+
+The first security control I added was an access control list to protect the Clinic Server. The server is located in the Services VLAN, and the main server IP is 192.168.50.10. Since this server may contain sensitive clinic or patient-related information, only the Reception, Admin, and Doctors VLANs should be able to initiate traffic toward it. Voice, Printer, and Guest networks should not have unnecessary access to the Clinic Server.
+
+The ACL allows VLAN 10, VLAN 20, and VLAN 25 to reach the Clinic Server, denies all other sources from reaching the Clinic Server, and then permits other traffic so the ACL does not accidentally block unrelated network communication.
+
+The configuration used was:
+ROAS(config)# ip access-list extended SECURE_CLINIC_SERVER
+ROAS(config-ext-nacl)# remark Allow authorized staff VLANs to reach Clinic Server
+ROAS(config-ext-nacl)# permit ip 192.168.10.0 0.0.0.255 host 192.168.50.10
+ROAS(config-ext-nacl)# permit ip 192.168.20.0 0.0.0.255 host 192.168.50.10
+ROAS(config-ext-nacl)# permit ip 192.168.25.0 0.0.0.255 host 192.168.50.10
+ROAS(config-ext-nacl)# remark Block all other sources from reaching Clinic Server
+ROAS(config-ext-nacl)# deny ip any host 192.168.50.10
+ROAS(config-ext-nacl)# permit ip any any
+ROAS(config-ext-nacl)# exit
+
+ROAS(config)# interface FastEthernet0/0.50
+ROAS(config-subif)# ip access-group SECURE_CLINIC_SERVER out
+ROAS(config-subif)# exit
+​
+The expected result is that Reception PCs, Admin PC, and Doctor PCs can reach the Clinic Server, while Guest Wi-Fi, Voice VLAN devices, and Printer VLAN devices should be blocked from initiating traffic to the server. This can be verified with ping tests and by checking the ACL counters.
+Verification commands:
+ROAS# show access-lists
+ROAS# show running-config interface FastEthernet0/0.50
+​
+The second security control was Voice VLAN isolation. The IP phones are in VLAN 30, and they should not be able to communicate freely with the data VLANs, printer VLAN, guest VLAN, or server VLAN. Phones should only need access to required voice services such as their gateway, call control, and TFTP behavior. Since the phones should not be used as a path into the rest of the network, I added an ACL to restrict Voice VLAN traffic from initiating connections to the other internal VLANs.
+
+The configuration used was:
+ROAS(config)# ip access-list extended VOICE_VLAN_RESTRICT
+ROAS(config-ext-nacl)# remark Block Voice VLAN from initiating traffic to data/server/printer/guest VLANs
+ROAS(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.10.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.20.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.25.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.40.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.50.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.60.0 0.0.0.255
+ROAS(config-ext-nacl)# permit ip any any
+ROAS(config-ext-nacl)# exit
+
+ROAS(config)# interface FastEthernet0/0.30
+ROAS(config-subif)# ip access-group VOICE_VLAN_RESTRICT in
+ROAS(config-subif)# exit
+​
+The expected result is that phones can still use the services they need to operate, but they should not be able to reach data workstations, the Clinic Server, the printer network, or guest devices. In Packet Tracer, voice behavior can sometimes be simplified, so after applying this ACL I would verify that phones can still register and place calls.
+Verification commands:
+ROAS# show access-lists
+ROAS# show running-config interface FastEthernet0/0.30
+​
+The third security control was printer VLAN restriction. The printer is in VLAN 40. Workstations need to reach the printer to send print jobs, but the printer should not need to initiate connections back into the workstation VLANs. Since printers can become an attack surface, I added an ACL to stop the printer VLAN from initiating traffic toward Reception, Admin, and Doctors VLANs.
+
+The configuration used was:
+ROAS(config)# ip access-list extended PRINTER_VLAN_RESTRICT
+ROAS(config-ext-nacl)# remark Block Printer VLAN from initiating traffic to workstation VLANs
+ROAS(config-ext-nacl)# deny ip 192.168.40.0 0.0.0.255 192.168.10.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.40.0 0.0.0.255 192.168.20.0 0.0.0.255
+ROAS(config-ext-nacl)# deny ip 192.168.40.0 0.0.0.255 192.168.25.0 0.0.0.255
+ROAS(config-ext-nacl)# permit ip any any
+ROAS(config-ext-nacl)# exit
+
+ROAS(config)# interface FastEthernet0/0.40
+ROAS(config-subif)# ip access-group PRINTER_VLAN_RESTRICT in
+ROAS(config-subif)# exit
+​
+The expected result is that Reception, Admin, and Doctor PCs can still reach the printer, but the printer cannot initiate traffic back toward those workstation networks.
+Verification commands:
+ROAS# show access-lists
+ROAS# show running-config interface FastEthernet0/0.40
+​
+The fourth security control was port security on endpoint access ports. This helps prevent unauthorized users from plugging in a random device, such as a laptop, and joining the network from an active switchport. Some ports in this lab support an IP phone with a PC connected behind it, so those ports need to allow two MAC addresses: one for the phone and one for the PC.
+
+The configuration used was:
+Switch(config)# interface range FastEthernet0/4 - 5
+Switch(config-if-range)# switchport mode access
+Switch(config-if-range)# switchport port-security
+Switch(config-if-range)# switchport port-security maximum 2
+Switch(config-if-range)# switchport port-security mac-address sticky
+Switch(config-if-range)# switchport port-security violation shutdown
+Switch(config-if-range)# exit
+​
+This enables port security, allows up to two MAC addresses, dynamically learns the allowed MAC addresses with sticky learning, and shuts the port down if an unauthorized device appears.
+Verification commands:
+Switch# show port-security
+Switch# show port-security interface FastEthernet0/4
+Switch# show running-config interface FastEthernet0/4
+​
+If a port goes into an err-disabled state because of a violation, it can be manually recovered with:
+Switch(config)# interface FastEthernet0/4
+Switch(config-if)# shutdown
+Switch(config-if)# no shutdown
+​
+The fifth security control was securing unused switchports. Unused ports should not stay active in VLAN 1. I created a blackhole VLAN, moved unused ports into that VLAN, and shut the ports down. Before applying this, I would verify active ports with show interfaces status so I do not accidentally shut down uplinks or active endpoint ports.
+The configuration used was:
+Switch# show interfaces status
+
+Switch(config)# vlan 999
+Switch(config-vlan)# name UNUSED_PORTS
+Switch(config-vlan)# exit
+
+Switch(config)# interface range FastEthernet0/6 - 24
+Switch(config-if-range)# switchport mode access
+Switch(config-if-range)# switchport access vlan 999
+Switch(config-if-range)# shutdown
+Switch(config-if-range)# exit
+​
+Verification commands:
+Switch# show vlan brief
+Switch# show interfaces status
+​
+The sixth security control was trunk hardening. By default, VLAN 1 is the native VLAN on trunk links. I changed the native VLAN to a dedicated unused VLAN, VLAN 888, and explicitly defined which VLANs are allowed on trunk links. This helps reduce VLAN hopping risk and makes the trunk configuration cleaner and more controlled.
+The native VLAN must match on both sides of every trunk. If the native VLAN is mismatched between switches, it can cause trunking and spanning-tree issues.
+The configuration used was:
+Switch(config)# vlan 888
+Switch(config-vlan)# name NATIVE_TRUNK
+Switch(config-vlan)# exit
+
+Switch(config)# interface FastEthernet0/1
+Switch(config-if)# switchport mode trunk
+Switch(config-if)# switchport trunk native vlan 888
+Switch(config-if)# switchport trunk allowed vlan 10,20,25,30,40,50,60
+Switch(config-if)# switchport nonegotiate
+Switch(config-if)# exit
+​
+Verification commands:
+Switch# show interfaces trunk
+Switch# show running-config interface FastEthernet0/1
+​
+The seventh security control was securing remote management access. Telnet is insecure because it sends credentials in plaintext, so I configured SSH for remote administration. This requires setting a hostname, domain name, RSA keys, SSH version 2, local user credentials, and VTY lines that only allow SSH.
+For a public GitHub project, real passwords should not be published. I used placeholders in the documentation.
+
+The configuration used was:
+Switch(config)# hostname SW-C
+SW-C(config)# ip domain-name clinic.local
+SW-C(config)# crypto key generate rsa
+​
+When prompted for the modulus size:
+How many bits in the modulus [512]: 2048
+​
+Then I continued with:
+SW-C(config)# ip ssh version 2
+SW-C(config)# username admin privilege 15 secret <STRONG_ADMIN_PASSWORD>
+SW-C(config)# enable secret <STRONG_ENABLE_SECRET>
+
+SW-C(config)# line vty 0 15
+SW-C(config-line)# transport input ssh
+SW-C(config-line)# login local
+SW-C(config-line)# exec-timeout 5 0
+SW-C(config-line)# logging synchronous
+SW-C(config-line)# exit
+​
+Optional SSH hardening:
+SW-C(config)# ip ssh time-out 60
+SW-C(config)# ip ssh authentication-retries 3
+​
+Verification commands:
+SW-C# show ip ssh
+SW-C# show running-config | section line vty
+​
+Expected output should show SSH version 2 enabled.
+The eighth security control was banners and local password hardening. The banner warns that access is restricted to authorized users. The enable secret protects privileged EXEC mode, and the console password protects local console access. I also enabled basic password encryption.
+
+The configuration used was:
+SW-A(config)# banner motd # WARNING: Authorized engineers only. Unauthorized access is prohibited. #
+SW-A(config)# enable secret <STRONG_ENABLE_SECRET>
+
+SW-A(config)# line console 0
+SW-A(config-line)# password <STRONG_CONSOLE_PASSWORD>
+SW-A(config-line)# login
+SW-A(config-line)# exec-timeout 5 0
+SW-A(config-line)# logging synchronous
+SW-A(config-line)# exit
+
+SW-A(config)# service password-encryption
+​
+Verification commands:
+SW-A# show running-config | include enable secret
+SW-A# show running-config | section line con
+SW-A# show running-config | include banner
+​
+The ninth security control was DHCP Snooping and Dynamic ARP Inspection. DHCP Snooping helps prevent rogue DHCP servers by marking ports as trusted or untrusted. DHCP server responses should only be accepted from trusted infrastructure ports. Dynamic ARP Inspection uses the DHCP Snooping binding table to help block ARP spoofing and man-in-the-middle attacks.
+Only uplinks toward the legitimate DHCP server/router should be trusted. End-user access ports should remain untrusted. Static IP devices may need extra handling because DAI relies on DHCP Snooping bindings.
+The configuration used was:
+SW-A(config)# ip dhcp snooping
+SW-A(config)# ip dhcp snooping vlan 10,20,25,30,40,50,60
+
+SW-A(config)# ip arp inspection vlan 10,20,25,30,40,50,60
+
+SW-A(config)# interface FastEthernet0/3
+SW-A(config-if)# description Uplink_to_Core_or_DHCP_Server_Path
+SW-A(config-if)# ip dhcp snooping trust
+SW-A(config-if)# ip arp inspection trust
+SW-A(config-if)# switchport mode trunk
+SW-A(config-if)# switchport nonegotiate
+SW-A(config-if)# exit
+​
+Verification commands:
+SW-A# show ip dhcp snooping
+SW-A# show ip dhcp snooping binding
+SW-A# show ip arp inspection
+SW-A# show ip arp inspection vlan 10
+​
+The tenth security control was PortFast and BPDU Guard on access ports. PortFast lets end devices move into the forwarding state faster instead of waiting through the normal STP listening and learning process. BPDU Guard protects the network by shutting down an access port if it receives BPDUs, which could indicate that someone plugged in an unauthorized switch.
+PortFast and BPDU Guard should only be used on access ports connected to endpoint devices. They should not be enabled on trunk links between switches.
+The configuration used was:
+SW-A(config)# interface FastEthernet0/1
+SW-A(config-if)# switchport mode access
+SW-A(config-if)# spanning-tree portfast
+SW-A(config-if)# spanning-tree bpduguard enable
+SW-A(config-if)# exit
+​
+Cisco IOS may display this warning:
+%Warning: portfast should only be enabled on ports connected to a single host.
+Connecting hubs, concentrators, switches, bridges, etc... to this interface
+when portfast is enabled can cause temporary bridging loops. Use with CAUTION.
+​
+This warning is expected. The important point is that PortFast should only be used on endpoint-facing access ports.
+Verification commands:
+SW-A# show running-config interface FastEthernet0/1
+SW-A# show spanning-tree interface FastEthernet0/1 detail
+​
+The eleventh security control was VTY and console session hardening. Idle management sessions can be abused if left open, so I added timeout settings. I also used logging synchronous to keep log messages from interrupting commands while typing in the CLI.
+The configuration used was:
+SW-A(config)# line vty 0 15
+SW-A(config-line)# exec-timeout 5 0
+SW-A(config-line)# logging synchronous
+SW-A(config-line)# exit
+
+SW-A(config)# line console 0
+SW-A(config-line)# exec-timeout 5 0
+SW-A(config-line)# logging synchronous
+SW-A(config-line)# exit
+​
+Verification commands:
+SW-A# show running-config | section line vty
+SW-A# show running-config | section line con
+​
+The twelfth security control was central logging, time synchronization, and monitoring preparation. Logging and accurate timestamps are important for troubleshooting and future incident review. A central syslog server makes it easier to review events across multiple devices. NTP keeps device clocks synchronized, and SNMPv3 can be added later for secure monitoring.
+In this lab, I used 192.168.50.30 as an example syslog/SIEM host. This IP should be replaced with the actual logging server used in the lab.
+The configuration used was:
+ROAS(config)# service timestamps log datetime msec
+ROAS(config)# logging host 192.168.50.30
+ROAS(config)# logging trap informational
+ROAS(config)# logging on
+​
+Optional NTP example:
+ROAS(config)# ntp server 192.168.50.30
+​
+Verification commands:
+ROAS# show logging
+ROAS# show clock
+ROAS# show ntp status
+​
+In a production environment, logging trap debugging may generate too much noise. For this lab, informational is a more balanced default.
+The final verification checklist for this security phase includes:
+
+Server VLAN ACL — verify with show access-lists and test that only approved VLANs can reach the Clinic Server.
+Voice VLAN ACL — verify with show access-lists and test that Voice VLAN cannot reach data/server VLANs.
+Printer VLAN ACL — verify with show access-lists and test that the printer cannot initiate traffic to workstation VLANs.
+Port Security — verify with show port-security and confirm MAC limits are active on access ports.
+Unused Ports — verify with show interfaces status and confirm unused ports are shut down in VLAN 999.
+Native VLAN Change — verify with show interfaces trunk and confirm native VLAN is set to 888 on trunks.
+SSH — verify with show ip ssh and confirm SSH version 2 is enabled.
+VTY Hardening — verify with show running-config | section line vty and confirm SSH-only access and timeout settings.
+DHCP Snooping — verify with show ip dhcp snooping and confirm snooping is enabled on the required VLANs.
+Dynamic ARP Inspection — verify with show ip arp inspection and confirm ARP inspection is enabled.
+BPDU Guard — verify with show spanning-tree interface detail and confirm BPDU Guard is enabled on access ports.
+Logging — verify with show logging and confirm timestamps and remote logging are configured.
+
+The biggest lesson from this security phase is that network security should be layered. VLANs separate the network logically, ACLs control which VLANs can communicate, switchport security reduces unauthorized physical access, trunk hardening reduces VLAN hopping risk, SSH protects management access, DHCP Snooping and Dynamic ARP Inspection help protect against Layer 2 attacks, and logging gives visibility for troubleshooting and future incident review.
+This phase made the Small Doctor Office network more complete. The project now shows not only that the network can be built and troubleshot, but also that it can be hardened and documented. The full project demonstrates VLAN segmentation, Router-on-a-Stick, DHCP, Voice VLANs, printer and server segmentation, ACLs, port security, trunk hardening, SSH-only management, DHCP Snooping, Dynamic ARP Inspection, BPDU Guard, and syslog/monitoring preparation.

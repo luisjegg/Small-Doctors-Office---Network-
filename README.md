@@ -24,8 +24,7 @@ A small doctor's office needs a segmented network for reception staff, administr
 - Layer 1, Layer 2, and Layer 3 troubleshooting
 - STP and PVID troubleshooting
 - Structured incident and ticket documentation
-
-> Security controls such as ACLs, management-plane hardening, and guest isolation will be documented separately when they are implemented in the secured-network project.
+- Security-hardening design and configuration documentation, including ACLs, switchport protections, and secure management
 
 ## Repository Contents
 
@@ -36,6 +35,13 @@ A small doctor's office needs a segmented network for reception staff, administr
 | [`configs/`](configs/) | Sanitized device running configurations |
 | [`troubleshooting-tickets/`](troubleshooting-tickets/) | Structured incident write-ups from the broken-network lab |
 | [`screenshots/`](screenshots/) | Verification output and supporting evidence |
+| [`phase-2-security-hardening/`](phase-2-security-hardening/) | Phase 2 security-hardening notes and secured Packet Tracer project |
+
+## Phase 2 Security Hardening
+
+The [Phase 2 security-hardening directory](phase-2-security-hardening/) contains the supplied notes and a secured Packet Tracer project. The notes document controls for the clinic server, voice, and printer VLANs; switchport and trunk hardening; SSH and local access; DHCP Snooping and Dynamic ARP Inspection; BPDU Guard; and logging.
+
+The notes include configuration examples, verification commands, and a verification checklist, but this repository does not include verification output confirming every control is active. NTP and SNMPv3 are described as optional or future monitoring measures, not completed controls. See the [phase index](phase-2-security-hardening/README.md) for artifact details and caveats.
 
 ## VLAN and Subnet Plan
 
